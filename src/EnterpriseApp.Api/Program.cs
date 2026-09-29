@@ -1,3 +1,4 @@
+#Added for testing purpose
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHealthChecks();
 var app = builder.Build();
