@@ -1,336 +1,134 @@
-name: Enterprise CI-CD Pipeline
+name: .NET CI-CD Stage Validation
 
 on:
   pull_request:
     branches:
       - develop
-      - release/**
+      - "release/**"
+
   push:
     branches:
       - develop
-      - release/**
+      - "release/**"
 
-permissions:
-  contents: read
-  pull-requests: write
-
-env:
-  ACR_LOGIN_SERVER: myacr.azurecr.io
-  IMAGE_NAME: my-application
-  AKS_NAMESPACE: my-application
-
-# ============================================================
-# 1. PULL REQUEST QUALITY VALIDATION
-# ============================================================
 jobs:
+
+  # ==========================================
+  # 1. PR QUALITY
+  # ==========================================
   pr-quality:
-    name: PR Quality & Security Validation
+    name: PR Quality Validation
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source code
+      - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          fetch-depth: 0
+          dotnet-version: '8.0.x'
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      - name: Restore
+        run: dotnet restore
 
-      # Replace this with your application's build/test commands.
-      - name: Install dependencies
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Unit Tests
+        run: dotnet test --configuration Release --no-build
+
+      - name: Code Quality Scan
         run: |
-          npm ci
+          echo "Code Quality Scan"
+          echo "SonarQube will be added later"
 
-      - name: Unit tests
+      - name: Security Scan
         run: |
-          npm test -- --coverage
+          echo "Security Scan"
+          echo "Trivy / dependency scan will be added later"
 
-      # Example code-quality gate.
-      # Replace with SonarQube/SonarCloud if used in your organization.
-      - name: Code quality scan
-        run: |
-          echo "Run SonarQube / SonarCloud quality scan here"
-
-      - name: Dependency vulnerability scan
-        run: |
-          npm audit --audit-level=high
-
-      # Example Dockerfile security scan.
-      - name: Container security validation
-        run: |
-          echo "Run Trivy / Defender / equivalent security scan here"
-
-      - name: PR validation passed
-        run: |
-          echo "PR quality gate passed"
-          echo "Proceed to PR approval and merge"
-
-  # ============================================================
+  # ==========================================
   # 2. DEVELOP CI
-  # Triggered after code is merged/pushed to develop
-  # ============================================================
+  # ==========================================
   develop-ci:
-    name: Develop CI - Build Docker Image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    name: Develop CI
+    if: github.event_name == 'push' &&
+        github.ref == 'refs/heads/develop'
+
     runs-on: ubuntu-latest
 
-    outputs:
-      image_tag: ${{ steps.meta.outputs.image_tag }}
-
     steps:
-      - name: Checkout develop branch
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Generate image tag
-        id: meta
-        run: |
-          IMAGE_TAG="${GITHUB_SHA::7}"
-          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
-          echo "IMAGE_TAG=${IMAGE_TAG}"
-
-      - name: Login to Azure
-        uses: azure/login@v2
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          dotnet-version: '8.0.x'
 
-      - name: Login to Azure Container Registry
-        run: |
-          az acr login --name "${ACR_LOGIN_SERVER%%.*}"
+      - name: Restore
+        run: dotnet restore
 
-      - name: Build Docker image
+      - name: Build Application
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run Unit Tests
+        run: dotnet test --configuration Release --no-build
+
+      - name: Build Docker Image
         run: |
           docker build \
-            -t "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${{ steps.meta.outputs.image_tag }}" \
-            -t "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:develop-latest" \
-            .
+            -t enterprise-app:${{ github.sha }} .
 
-      - name: Docker image security scan
+      - name: Verify Docker Image
         run: |
-          echo "Run Trivy image scan here"
+          docker images
+          echo "Docker image created successfully"
 
-      - name: Push Docker image to ACR
-        run: |
-          docker push "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${{ steps.meta.outputs.image_tag }}"
-          docker push "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:develop-latest"
-
-  # ============================================================
-  # 3. DEV DEPLOYMENT
-  # Automatic deployment
-  # ============================================================
-  deploy-dev:
-    name: CD - Deploy to DEV
-    needs: develop-ci
-    runs-on: ubuntu-latest
-    environment:
-      name: dev
-
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Get AKS credentials
-        run: |
-          az aks get-credentials \
-            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
-            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
-            --overwrite-existing
-
-      - name: Deploy application to DEV AKS
-        run: |
-          kubectl -n "${AKS_NAMESPACE}" set image deployment/my-application \
-            my-application="${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${{ needs.develop-ci.outputs.image_tag }}"
-
-          kubectl -n "${AKS_NAMESPACE}" rollout status \
-            deployment/my-application \
-            --timeout=5m
-
-  # ============================================================
-  # 4. RELEASE CI
-  # Triggered after release branch merge/push
-  # ============================================================
+  # ==========================================
+  # 3. RELEASE CI
+  # ==========================================
   release-ci:
-    name: Release CI - Build Docker Image
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')
+    name: Release CI
+    if: github.event_name == 'push' &&
+        startsWith(github.ref, 'refs/heads/release/')
+
     runs-on: ubuntu-latest
 
-    outputs:
-      image_tag: ${{ steps.meta.outputs.image_tag }}
-
     steps:
-      - name: Checkout release branch
+      - name: Checkout Release Code
         uses: actions/checkout@v4
 
-      - name: Generate release image tag
-        id: meta
-        run: |
-          VERSION="${GITHUB_SHA::7}"
-          echo "image_tag=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Login to Azure
-        uses: azure/login@v2
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          dotnet-version: '8.0.x'
 
-      - name: Login to Azure Container Registry
-        run: |
-          az acr login --name "${ACR_LOGIN_SERVER%%.*}"
+      - name: Restore
+        run: dotnet restore
 
-      - name: Build release Docker image
+      - name: Build Application
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run Unit Tests
+        run: dotnet test --configuration Release --no-build
+
+      - name: Build Release Docker Image
         run: |
           docker build \
-            -t "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${{ steps.meta.outputs.image_tag }}" \
-            -t "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:release-latest" \
-            .
+            -t enterprise-app:${{ github.sha }} .
 
-      - name: Docker image security scan
+      - name: Verify Docker Image
         run: |
-          echo "Run Trivy / Defender image scan here"
+          docker images
+          echo "Release Docker image created successfully"
 
-      - name: Push release image to ACR
+      - name: ACR Placeholder
         run: |
-          docker push "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${{ steps.meta.outputs.image_tag }}"
-          docker push "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:release-latest"
+          echo "ACR push will be implemented later"
 
-  # ============================================================
-  # 5. UAT DEPLOYMENT
-  # GitHub Environment "uat" should require approval.
-  # ============================================================
-  deploy-uat:
-    name: CD - Deploy to UAT
-    needs: release-ci
-    runs-on: ubuntu-latest
-    environment:
-      name: uat
-
-    steps:
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Get AKS credentials
+      - name: AKS Placeholder
         run: |
-          az aks get-credentials \
-            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
-            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
-            --overwrite-existing
-
-      - name: Deploy to UAT
-        run: |
-          kubectl -n "${AKS_NAMESPACE}" set image deployment/my-application \
-            my-application="${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${{ needs.release-ci.outputs.image_tag }}"
-
-          kubectl -n "${AKS_NAMESPACE}" rollout status \
-            deployment/my-application \
-            --timeout=5m
-
-  # ============================================================
-  # 6. SIT
-  # Optional approval-controlled environment
-  # ============================================================
-  deploy-sit:
-    name: CD - Deploy to SIT
-    needs: deploy-uat
-    runs-on: ubuntu-latest
-    environment:
-      name: sit
-
-    steps:
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Get AKS credentials
-        run: |
-          az aks get-credentials \
-            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
-            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
-            --overwrite-existing
-
-      - name: Deploy to SIT
-        run: |
-          kubectl -n "${AKS_NAMESPACE}" set image deployment/my-application \
-            my-application="${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${{ needs.release-ci.outputs.image_tag }}"
-
-          kubectl -n "${AKS_NAMESPACE}" rollout status \
-            deployment/my-application \
-            --timeout=5m
-
-  # ============================================================
-  # 7. PRE-PROD
-  # Approval controlled through GitHub Environment
-  # ============================================================
-  deploy-preprod:
-    name: CD - Deploy to PRE-PROD
-    needs: deploy-sit
-    runs-on: ubuntu-latest
-    environment:
-      name: pre-prod
-
-    steps:
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Get AKS credentials
-        run: |
-          az aks get-credentials \
-            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
-            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
-            --overwrite-existing
-
-      - name: Deploy to PRE-PROD
-        run: |
-          kubectl -n "${AKS_NAMESPACE}" set image deployment/my-application \
-            my-application="${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${{ needs.release-ci.outputs.image_tag }}"
-
-          kubectl -n "${AKS_NAMESPACE}" rollout status \
-            deployment/my-application \
-            --timeout=5m
-
-  # ============================================================
-  # 8. PRODUCTION
-  # Mandatory production approval through GitHub Environment
-  # ============================================================
-  deploy-prod:
-    name: CD - Deploy to PROD
-    needs: deploy-preprod
-    runs-on: ubuntu-latest
-    environment:
-      name: production
-
-    steps:
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Get production AKS credentials
-        run: |
-          az aks get-credentials \
-            --resource-group "${{ secrets.AKS_RESOURCE_GROUP }}" \
-            --name "${{ secrets.AKS_CLUSTER_NAME }}" \
-            --overwrite-existing
-
-      - name: Deploy to PROD
-        run: |
-          kubectl -n "${AKS_NAMESPACE}" set image deployment/my-application \
-            my-application="${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${{ needs.release-ci.outputs.image_tag }}"
-
-          kubectl -n "${AKS_NAMESPACE}" rollout status \
-            deployment/my-application \
-            --timeout=5m
-
-      - name: Production deployment completed
-        run: |
-          echo "Production deployment completed successfully"
+          echo "AKS deployment will be implemented later"
