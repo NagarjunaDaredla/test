@@ -1,27 +1,24 @@
-name: .NET CI-CD Stage Validation
+name: .NET CI Pipeline
 
 on:
-  pull_request:
-    branches:
-      - develop
-      - "release/**"
-
   push:
     branches:
       - develop
-      - "release/**"
+      - main
+
+  pull_request:
+    branches:
+      - develop
+      - main
 
 jobs:
 
-  # ==========================================
-  # 1. PR QUALITY
-  # ==========================================
-  pr-quality:
-    name: PR Quality Validation
-    if: github.event_name == 'pull_request'
+  build-test:
+    name: Build and Test
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout Code
         uses: actions/checkout@v4
 
@@ -30,105 +27,17 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore
-        run: dotnet restore
-
-      - name: Build
-        run: dotnet build --configuration Release --no-restore
-
-      - name: Unit Tests
-        run: dotnet test --configuration Release --no-build
-
-      - name: Code Quality Scan
-        run: |
-          echo "Code Quality Scan"
-          echo "SonarQube will be added later"
-
-      - name: Security Scan
-        run: |
-          echo "Security Scan"
-          echo "Trivy / dependency scan will be added later"
-
-  # ==========================================
-  # 2. DEVELOP CI
-  # ==========================================
-  develop-ci:
-    name: Develop CI
-    if: github.event_name == 'push' &&
-        github.ref == 'refs/heads/develop'
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Restore
-        run: dotnet restore
+      - name: Restore Dependencies
+        run: dotnet restore EnterpriseApp.sln
 
       - name: Build Application
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build EnterpriseApp.sln --configuration Release --no-restore
 
       - name: Run Unit Tests
-        run: dotnet test --configuration Release --no-build
+        run: dotnet test EnterpriseApp.sln --configuration Release --no-build
 
       - name: Build Docker Image
-        run: |
-          docker build \
-            -t enterprise-app:${{ github.sha }} .
+        run: docker build -t enterprise-app:${{ github.sha }} .
 
       - name: Verify Docker Image
-        run: |
-          docker images
-          echo "Docker image created successfully"
-
-  # ==========================================
-  # 3. RELEASE CI
-  # ==========================================
-  release-ci:
-    name: Release CI
-    if: github.event_name == 'push' &&
-        startsWith(github.ref, 'refs/heads/release/')
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Release Code
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Restore
-        run: dotnet restore
-
-      - name: Build Application
-        run: dotnet build --configuration Release --no-restore
-
-      - name: Run Unit Tests
-        run: dotnet test --configuration Release --no-build
-
-      - name: Build Release Docker Image
-        run: |
-          docker build \
-            -t enterprise-app:${{ github.sha }} .
-
-      - name: Verify Docker Image
-        run: |
-          docker images
-          echo "Release Docker image created successfully"
-
-      - name: ACR Placeholder
-        run: |
-          echo "ACR push will be implemented later"
-
-      - name: AKS Placeholder
-        run: |
-          echo "AKS deployment will be implemented later"
+        run: docker images
