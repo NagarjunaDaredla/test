@@ -5,31 +5,29 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 
 WORKDIR /src
 
-# Copy solution and project files
+# Copy solution and project file
 COPY EnterpriseApp.sln ./
 COPY src/EnterpriseApp.Api/EnterpriseApp.Api.csproj src/EnterpriseApp.Api/
 
-# Restore dependencies
-RUN dotnet restore EnterpriseApp.sln
+# Restore
+RUN dotnet restore src/EnterpriseApp.Api/EnterpriseApp.Api.csproj
 
-# Copy remaining source code
+# Copy source code
 COPY . .
 
 # Build
-RUN dotnet build EnterpriseApp.sln \
+RUN dotnet build src/EnterpriseApp.Api/EnterpriseApp.Api.csproj \
     --configuration Release \
     --no-restore
 
-# Run tests
+# Test
 RUN dotnet test EnterpriseApp.sln \
     --configuration Release \
-    --no-build \
     --no-restore
 
 # Publish
 RUN dotnet publish src/EnterpriseApp.Api/EnterpriseApp.Api.csproj \
     --configuration Release \
-    --no-restore \
     --output /app/publish
 
 
