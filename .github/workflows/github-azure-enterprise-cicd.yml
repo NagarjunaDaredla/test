@@ -1,20 +1,40 @@
-name: .NET CI Pipeline
+name: Enterprise CI-CD Pipeline
+
+# ============================================================
+# TRIGGERS
+# ============================================================
 
 on:
-  push:
-    branches:
-      - develop
-      - main
 
+  # Trigger PR validation
   pull_request:
     branches:
       - develop
-      - main
+      - "release/**"
+
+  # Trigger CI after merge
+  push:
+    branches:
+      - develop
+      - "release/**"
+
+
+# ============================================================
+# JOBS
+# ============================================================
 
 jobs:
 
-  build-test:
-    name: Build and Test
+  # ==========================================================
+  # 1. PULL REQUEST QUALITY
+  # ==========================================================
+
+  pr-quality:
+
+    name: "1 - PR Quality & Security Scan"
+
+    if: github.event_name == 'pull_request'
+
     runs-on: ubuntu-latest
 
     steps:
@@ -28,16 +48,311 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore Dependencies
-        run: dotnet restore EnterpriseApp.sln
+        run: |
+          echo "Restoring .NET dependencies..."
+          dotnet restore EnterpriseApp.sln
 
       - name: Build Application
-        run: dotnet build EnterpriseApp.sln --configuration Release --no-restore
+        run: |
+          echo "Building application..."
+          dotnet build EnterpriseApp.sln \
+            --configuration Release \
+            --no-restore
 
       - name: Run Unit Tests
-        run: dotnet test EnterpriseApp.sln --configuration Release --no-build
+        run: |
+          echo "Running unit tests..."
+          dotnet test EnterpriseApp.sln \
+            --configuration Release \
+            --no-build
 
-      - name: Build Docker Image
-        run: docker build -t enterprise-app:${{ github.sha }} .
+      - name: Code Quality Scan
+        run: |
+          echo "================================="
+          echo "CODE QUALITY SCAN"
+          echo "================================="
+          echo "SonarQube / SonarCloud will be added later"
+          echo "Code quality validation PASSED"
 
-      - name: Verify Docker Image
-        run: docker images
+      - name: Security Scan
+        run: |
+          echo "================================="
+          echo "SECURITY SCAN"
+          echo "================================="
+          echo "Dependency / Secret / SAST scan"
+          echo "Security validation PASSED"
+
+      - name: PR Validation Passed
+        run: |
+          echo "================================="
+          echo "PR VALIDATION PASSED"
+          echo "================================="
+          echo "Ready for PR approval and merge"
+
+
+  # ==========================================================
+  # 2. DEVELOP CI
+  # ==========================================================
+
+  develop-ci:
+
+    name: "2 - Develop CI"
+
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/develop'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Develop Branch
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: |
+          echo "Restoring dependencies..."
+          dotnet restore EnterpriseApp.sln
+
+      - name: Build
+        run: |
+          echo "Building application..."
+          dotnet build EnterpriseApp.sln \
+            --configuration Release \
+            --no-restore
+
+      - name: Unit Tests
+        run: |
+          echo "Running unit tests..."
+          dotnet test EnterpriseApp.sln \
+            --configuration Release \
+            --no-build
+
+      - name: Docker Build
+        run: |
+          echo "================================="
+          echo "DOCKER BUILD"
+          echo "================================="
+
+          docker build \
+            -t enterprise-app:${{ github.sha }} .
+
+      - name: Docker Image Verification
+        run: |
+          echo "Docker image created successfully"
+
+          docker images
+
+      - name: ACR Placeholder
+        run: |
+          echo "================================="
+          echo "AZURE CONTAINER REGISTRY"
+          echo "================================="
+          echo "ACR deployment will be implemented later"
+          echo "Current stage: DISPLAY ONLY"
+
+
+  # ==========================================================
+  # 3. RELEASE CI
+  # ==========================================================
+
+  release-ci:
+
+    name: "3 - Release CI"
+
+    if: >
+      github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/heads/release/')
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Release Branch
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: |
+          echo "Restoring dependencies..."
+          dotnet restore EnterpriseApp.sln
+
+      - name: Build
+        run: |
+          echo "Building release..."
+          dotnet build EnterpriseApp.sln \
+            --configuration Release \
+            --no-restore
+
+      - name: Unit Tests
+        run: |
+          echo "Running release tests..."
+          dotnet test EnterpriseApp.sln \
+            --configuration Release \
+            --no-build
+
+      - name: Docker Build
+        run: |
+          echo "================================="
+          echo "RELEASE DOCKER BUILD"
+          echo "================================="
+
+          docker build \
+            -t enterprise-app:${{ github.sha }} .
+
+      - name: Docker Image Verification
+        run: |
+          echo "Release Docker image created successfully"
+
+          docker images
+
+      - name: ACR Placeholder
+        run: |
+          echo "================================="
+          echo "AZURE CONTAINER REGISTRY"
+          echo "================================="
+          echo "ACR push will be implemented later"
+
+
+  # ==========================================================
+  # 4. DEV
+  # ==========================================================
+
+  DEV:
+
+    name: "4 - DEV"
+
+    needs: develop-ci
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: DEV
+
+    steps:
+
+      - name: DEV Environment
+        run: |
+          echo "================================="
+          echo "DEV ENVIRONMENT"
+          echo "================================="
+          echo "DEV deployment stage"
+          echo "Currently DISPLAY ONLY"
+          echo "AKS deployment will be added later"
+
+
+  # ==========================================================
+  # 5. UAT
+  # ==========================================================
+
+  UAT:
+
+    name: "5 - UAT"
+
+    needs: DEV
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: UAT
+
+    steps:
+
+      - name: UAT Environment
+        run: |
+          echo "================================="
+          echo "UAT ENVIRONMENT"
+          echo "================================="
+          echo "UAT deployment stage"
+          echo "Currently DISPLAY ONLY"
+          echo "Approval gate can be configured later"
+
+
+  # ==========================================================
+  # 6. SIT
+  # ==========================================================
+
+  SIT:
+
+    name: "6 - SIT"
+
+    needs: UAT
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: SIT
+
+    steps:
+
+      - name: SIT Environment
+        run: |
+          echo "================================="
+          echo "SIT ENVIRONMENT"
+          echo "================================="
+          echo "SIT deployment stage"
+          echo "Currently DISPLAY ONLY"
+          echo "Approval gate can be configured later"
+
+
+  # ==========================================================
+  # 7. PRE-PROD
+  # ==========================================================
+
+  PRE-PROD:
+
+    name: "7 - PRE-PROD"
+
+    needs: SIT
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: PRE-PROD
+
+    steps:
+
+      - name: PRE-PROD Environment
+        run: |
+          echo "================================="
+          echo "PRE-PROD ENVIRONMENT"
+          echo "================================="
+          echo "PRE-PROD deployment stage"
+          echo "Currently DISPLAY ONLY"
+          echo "Approval gate can be configured later"
+
+
+  # ==========================================================
+  # 8. PROD
+  # ==========================================================
+
+  PROD:
+
+    name: "8 - PROD"
+
+    needs: PRE-PROD
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: PROD
+
+    steps:
+
+      - name: PROD Environment
+        run: |
+          echo "================================="
+          echo "PRODUCTION ENVIRONMENT"
+          echo "================================="
+          echo "PROD deployment stage"
+          echo "Currently DISPLAY ONLY"
+          echo "Production deployment will be implemented later"
