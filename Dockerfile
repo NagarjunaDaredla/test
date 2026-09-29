@@ -1,16 +1,47 @@
+# =========================
+# BUILD STAGE
+# =========================
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+
 WORKDIR /src
-COPY EnterpriseApp.sln .
+
+# Copy solution and project files
+COPY EnterpriseApp.sln ./
 COPY src/EnterpriseApp.Api/EnterpriseApp.Api.csproj src/EnterpriseApp.Api/
-COPY tests/EnterpriseApp.Api.Tests/EnterpriseApp.Api.Tests.csproj tests/EnterpriseApp.Api.Tests/
+
+# Restore dependencies
 RUN dotnet restore EnterpriseApp.sln
+
+# Copy remaining source code
 COPY . .
-RUN dotnet test EnterpriseApp.sln --configuration Release --no-restore
-RUN dotnet publish src/EnterpriseApp.Api/EnterpriseApp.Api.csproj --configuration Release --no-restore --output /app/publish
+
+# Build
+RUN dotnet build EnterpriseApp.sln \
+    --configuration Release \
+    --no-restore
+
+# Run tests
+RUN dotnet test EnterpriseApp.sln \
+    --configuration Release \
+    --no-build \
+    --no-restore
+
+# Publish
+RUN dotnet publish src/EnterpriseApp.Api/EnterpriseApp.Api.csproj \
+    --configuration Release \
+    --no-restore \
+    --output /app/publish
+
+
+# =========================
+# RUNTIME STAGE
+# =========================
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+
 WORKDIR /app
-ENV ASPNETCORE_URLS=http://+:8080
-EXPOSE 8080
+
 COPY --from=build /app/publish .
-USER app
+
+EXPOSE 8080
+
 ENTRYPOINT ["dotnet", "EnterpriseApp.Api.dll"]
